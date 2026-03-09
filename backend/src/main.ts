@@ -23,7 +23,14 @@ async function bootstrap() {
     .setTitle('Shabu API')
     .setDescription('Shabu Restaurant API Documentation')
     .setVersion('1.0')
-    .addBearerAuth() // สำหรับ JWT ในอนาคต
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+      'JWT',
+    )
     .build();
 
   app.useGlobalInterceptors(new ResponseInterceptor());
