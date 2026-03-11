@@ -5,10 +5,12 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ResponseInterceptor } from './common/response.interceptor';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.use(cookieParser())
   // Validation
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
@@ -21,10 +23,17 @@ async function bootstrap() {
     .setTitle('Shabu API')
     .setDescription('Shabu Restaurant API Documentation')
     .setVersion('1.0')
-    .addBearerAuth() // สำหรับ JWT ในอนาคต
+    .addBearerAuth(
+      {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+      },
+      'JWT',
+    )
     .build();
 
-  app.useGlobalInterceptors(new ResponseInterceptor()); 
+  app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new AllExceptionsFilter());
 
   const document = SwaggerModule.createDocument(app, config);
