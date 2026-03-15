@@ -8,8 +8,6 @@ import { KitchensModule } from './kitchens/kitchens.module';
 import { CategoriesModule } from './categories/categories.module';
 import { TiersModule } from './tiers/tiers.module';
 import { EventsModule } from './events/events.module';
-import { MenuItemsModule } from './menu_items/menu_items.module';
-import { MenuItemModule } from './menu-item/menu-item.module';
 import { MenuItemModule } from './menu-item/menu-item.module';
 
 
@@ -24,7 +22,6 @@ import { MenuItemModule } from './menu-item/menu-item.module';
     KitchensModule,
     CategoriesModule,
     TiersModule,
-    MenuItemsModule,
     MenuItemModule
   ],
 })
