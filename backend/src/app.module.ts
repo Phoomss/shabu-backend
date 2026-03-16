@@ -9,6 +9,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { TiersModule } from './tiers/tiers.module';
 import { EventsModule } from './events/events.module';
 import { MenuItemModule } from './menu-item/menu-item.module';
+import { TablesModule } from './tables/tables.module';
 
 
 @Module({
@@ -22,7 +23,8 @@ import { MenuItemModule } from './menu-item/menu-item.module';
     KitchensModule,
     CategoriesModule,
     TiersModule,
-    MenuItemModule
+    MenuItemModule,
+    TablesModule
   ],
 })
 export class AppModule { }
