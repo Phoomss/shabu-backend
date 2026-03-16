@@ -87,4 +87,17 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   emitTableStatus(tableId: number, status: string) {
     this.server.emit('table:status_changed', { tableId, status });
   }
+
+  // เพิ่มใน events.gateway.ts
+  emitSessionStatus(sessionId: string, status: string) {
+    this.server
+      .to(`session:${sessionId}`)
+      .emit('session:status_changed', { sessionId, status });
+  }
+
+  emitSessionWarning(sessionId: string, minutesLeft: number) {
+    this.server
+      .to(`session:${sessionId}`)
+      .emit('session:time_warning', { sessionId, minutesLeft });
+  }
 }
