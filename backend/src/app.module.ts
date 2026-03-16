@@ -12,6 +12,7 @@ import { MenuItemModule } from './menu-item/menu-item.module';
 import { TablesModule } from './tables/tables.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { OrdersModule } from './orders/orders.module';
 
 
 @Module({
@@ -28,7 +29,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     TiersModule,
     MenuItemModule,
     TablesModule,
-    SessionsModule
+    SessionsModule,
+    OrdersModule
   ],
 })
 export class AppModule { }
