@@ -10,11 +10,14 @@ import { TiersModule } from './tiers/tiers.module';
 import { EventsModule } from './events/events.module';
 import { MenuItemModule } from './menu-item/menu-item.module';
 import { TablesModule } from './tables/tables.module';
+import { SessionsModule } from './sessions/sessions.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     PrismaModule,
     EventsModule,
     RoleModule,
@@ -24,7 +27,8 @@ import { TablesModule } from './tables/tables.module';
     CategoriesModule,
     TiersModule,
     MenuItemModule,
-    TablesModule
+    TablesModule,
+    SessionsModule
   ],
 })
 export class AppModule { }
