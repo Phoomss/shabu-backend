@@ -42,14 +42,12 @@ enum ItemStatus {
 
 // --- 1. กลุ่มจัดการผู้ใช้งานและสิทธิ์ (User & Access Control) ---
 
-/// เก็บระดับสิทธิ์การเข้าใช้งาน เช่น OWNER, MANAGER, STAFF, KITCHEN
 model Role {
   id    Int    @id @default(autoincrement())
   name  String @unique
   users User[]
 }
 
-/// ข้อมูลพนักงานและผู้บริหาร ใช้สำหรับการ Login และเก็บประวัติการทำงาน
 model User {
   id           String    @id @default(uuid())
   roleId       Int
@@ -57,27 +55,27 @@ model User {
   username     String    @unique
   passwordHash String
   fullName     String
-  avatarUrl    String? // URL รูปภาพโปรไฟล์พนักงาน
+  avatarUrl    String?
   isActive     Boolean   @default(true)
-  invoices     Invoice[] // ประวัติการปิดยอดชำระเงินโดยพนักงานคนนี้
-  voidedLogs   VoidLog[] // ประวัติการอนุมัติยกเลิกออเดอร์ (เฉพาะ Manager/Owner)
+  refreshToken String?
+  invoices     Invoice[]
+  voidedLogs   VoidLog[]
 }
 
 // --- 2. กลุ่มตั้งค่าเมนูและการแยกแผนกครัว (Menu & Kitchen Configuration) ---
 
-/// ข้อมูลแผนกครัว เพื่อแยกหน้าจอออเดอร์ระหว่าง ครัวร้อน และ ครัวเย็น
+/// [Socket] หน้าจอ KDS (Kitchen Display System) จะต้อง listen แผนกของตัวเอง
 model KitchenSection {
   id         Int         @id @default(autoincrement())
   name       String      @unique // เช่น HOT_KITCHEN, COLD_KITCHEN
   menuItems  MenuItem[]
   orderItems OrderItem[]
 }
-
 /// หมวดหมู่ของอาหาร เช่น เนื้อวัว, ลูกชิ้น, ผัก, ขนมหวาน
 model Category {
   id        Int        @id @default(autoincrement())
   name      String
-  iconUrl   String? // ไอคอนสำหรับแสดงบนหน้าจอสั่งอาหาร
+  iconUrl   String?
   menuItems MenuItem[]
 }
 
@@ -87,7 +85,7 @@ model Tier {
   name          String         @unique
   priceAdult    Decimal
   priceChild    Decimal
-  timeLimit     Int            @default(90) // จำกัดเวลาทาน (นาที)
+  timeLimit     Int            @default(90)
   sessions      Session[]
   tierMenuItems TierMenuItem[]
 }
@@ -100,8 +98,8 @@ model MenuItem {
   kitchenId   Int
   kitchen     KitchenSection @relation(fields: [kitchenId], references: [id])
   name        String
-  imageUrl    String? // รูปภาพประกอบเมนู
-  isAvailable Boolean        @default(true) // สถานะเมนู (ของหมด/พร้อมขาย)
+  imageUrl    String?
+  isAvailable Boolean        @default(true) // [Socket] แจ้งลูกค้า/พนักงาน ทันทีเมื่อของหมด
   tierItems   TierMenuItem[]
   orderItems  OrderItem[]
   recipe      Recipe[]
@@ -118,13 +116,12 @@ model TierMenuItem {
 }
 
 // --- 3. กลุ่มจัดการโต๊ะและรอบการนั่งทาน (Table & Session Management) ---
-
 /// ข้อมูลโต๊ะในร้านและสถานะปัจจุบัน (ว่าง, มีลูกค้า, รอทำความสะอาด)
 model Table {
   id       Int         @id @default(autoincrement())
-  number   String      @unique // เช่น A01, B05
+  number   String      @unique
   zone     String?
-  status   TableStatus @default(AVAILABLE)
+  status   TableStatus @default(AVAILABLE) // [Socket] อัปเดตผังโต๊ะที่หน้า POS/พนักงาน ทันทีที่มีการเปลี่ยนสถานะ
   sessions Session[]
 }
 
@@ -135,22 +132,21 @@ model Session {
   table     Table         @relation(fields: [tableId], references: [id])
   tierId    Int
   tier      Tier          @relation(fields: [tierId], references: [id])
-  qrToken   String        @unique // Token ที่ใช้ใน QR Code เพื่อยืนยันตัวตนลูกค้า
+  qrToken   String        @unique
   startTime DateTime      @default(now())
-  endTime   DateTime // เวลาที่ลูกค้าต้องทานเสร็จ
-  status    SessionStatus @default(ACTIVE)
+  endTime   DateTime // [Socket] ส่ง event แจ้งเตือนลูกค้า/พนักงาน เมื่อเหลือ 15 นาที หรือหมดเวลา
+  status    SessionStatus @default(ACTIVE) // [Socket] แจ้งเตือนเมื่อมีการปิดโต๊ะหรือเรียกเช็คบิล
   orders    Order[]
   invoices  Invoice[]
 }
 
 // --- 4. กลุ่มการสั่งอาหารและสถานะออเดอร์ (Ordering System) ---
-
 /// หัวข้อออเดอร์ในแต่ละครั้งที่ลูกค้ากด "ยืนยันการสั่ง"
 model Order {
   id        String      @id @default(uuid())
   sessionId String
   session   Session     @relation(fields: [sessionId], references: [id])
-  status    OrderStatus @default(PENDING)
+  status    OrderStatus @default(PENDING) // [Socket] แจ้งเตือนออเดอร์ใหม่เข้าครัว (New Order Alert)
   createdAt DateTime    @default(now())
   items     OrderItem[]
 }
@@ -162,10 +158,10 @@ model OrderItem {
   order      Order          @relation(fields: [orderId], references: [id])
   menuItemId String
   menuItem   MenuItem       @relation(fields: [menuItemId], references: [id])
-  kitchenId  Int // เพื่อแยกไปแสดงผลที่จอครัวร้อนหรือครัวเย็น
+  kitchenId  Int
   kitchen    KitchenSection @relation(fields: [kitchenId], references: [id])
   quantity   Int
-  status     ItemStatus     @default(PENDING) // รอดำเนินการ, กำลังทำ, เสิร์ฟแล้ว
+  status     ItemStatus     @default(PENDING) // [Socket] สำคัญมาก: แจ้งลูกค้าเมื่ออาหารเปลี่ยนเป็น 'กำลังทำ' หรือ 'เสิร์ฟแล้ว'
   voidLog    VoidLog?
 }
 
@@ -175,8 +171,8 @@ model OrderItem {
 model Ingredient {
   id           Int      @id @default(autoincrement())
   name         String
-  unit         String // เช่น กรัม, กิโลกรัม, ชิ้น
-  currentStock Decimal
+  unit         String
+  currentStock Decimal // [Socket] แจ้งเตือน Admin/Owner ทันทีเมื่อ Stock ต่ำกว่าจุดวิกฤต
   imageUrl     String?
   recipes      Recipe[]
 }
@@ -199,9 +195,9 @@ model Invoice {
   session       Session  @relation(fields: [sessionId], references: [id])
   totalAmount   Decimal
   discount      Decimal  @default(0)
-  netAmount     Decimal
-  paymentMethod String // เช่น เงินสด, โอนเงิน, บัตรเครดิต
-  createdBy     String // พนักงานที่ทำรายการเก็บเงิน
+  netAmount     Decimal // [Socket] แจ้งยอดเงินเข้าที่หน้า Dashboard ของ Owner ทันที
+  paymentMethod String
+  createdBy     String
   user          User     @relation(fields: [createdBy], references: [id])
   createdAt     DateTime @default(now())
 }
@@ -212,7 +208,7 @@ model VoidLog {
   orderItemId String    @unique
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
   reason      String
-  approvedBy  String // Manager ที่เป็นคนกดยืนยันการยกเลิก
+  approvedBy  String
   manager     User      @relation(fields: [approvedBy], references: [id])
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime  @default(now()) // [Socket] แจ้งเตือนผู้จัดการเมื่อมีรายการขอ Void
 }
