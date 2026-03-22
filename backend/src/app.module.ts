@@ -14,6 +14,7 @@ import { SessionsModule } from './sessions/sessions.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { OrdersModule } from './orders/orders.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
+import { InvoicesModule } from './invoices/invoices.module';
 
 
 @Module({
@@ -32,7 +33,8 @@ import { IngredientsModule } from './ingredients/ingredients.module';
     TablesModule,
     SessionsModule,
     OrdersModule,
-    IngredientsModule
+    IngredientsModule,
+    InvoicesModule
   ],
 })
 export class AppModule { }

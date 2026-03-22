@@ -111,4 +111,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }) {
     this.server.emit('ingredient:low_stock', data);
   }
+
+  // [Invoice] แจ้ง dashboard owner เมื่อมียอดใหม่
+  emitNewInvoice(data: {
+    invoiceId: string;
+    netAmount: number;
+    paymentMethod: string;
+    tableNumber: string;
+    createdAt: Date;
+  }) {
+    this.server.emit('invoice:new', data);
+  }
 }
