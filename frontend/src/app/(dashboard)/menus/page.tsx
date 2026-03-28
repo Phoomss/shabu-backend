@@ -31,7 +31,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Edit, Trash2, Search, Utensils } from "lucide-react";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  Search,
+  Utensils,
+  Filter,
+  CheckCircle2,
+  XCircle,
+} from "lucide-react";
 import type { MenuItem } from "@/types";
 
 export default function MenusPage() {
@@ -45,6 +54,9 @@ export default function MenusPage() {
   const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterCategory, setFilterCategory] = useState<string>("all");
+  const [filterKitchen, setFilterKitchen] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [formData, setFormData] = useState({
     name: "",
     categoryId: "",
@@ -114,9 +126,16 @@ export default function MenusPage() {
     }
   };
 
-  const filteredItems = menuItems.filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredItems = menuItems.filter((item) => {
+    const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = filterCategory === "all" || item.category.id.toString() === filterCategory;
+    const matchesKitchen = filterKitchen === "all" || item.kitchen.id.toString() === filterKitchen;
+    const matchesStatus = filterStatus === "all" || 
+      (filterStatus === "available" && item.isAvailable) ||
+      (filterStatus === "unavailable" && !item.isAvailable);
+    
+    return matchesSearch && matchesCategory && matchesKitchen && matchesStatus;
+  });
 
   if (loading) {
     return (
@@ -250,6 +269,93 @@ export default function MenusPage() {
               className="pl-10"
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            <CardTitle className="text-base">ตัวกรอง</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-3">
+            <div>
+              <Label htmlFor="filter-category">หมวดหมู่</Label>
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger id="filter-category">
+                  <SelectValue placeholder="เลือกหมวดหมู่" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกหมวดหมู่</SelectItem>
+                  {categories.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id.toString()}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="filter-kitchen">แผนกครัว</Label>
+              <Select value={filterKitchen} onValueChange={setFilterKitchen}>
+                <SelectTrigger id="filter-kitchen">
+                  <SelectValue placeholder="เลือกแผนกครัว" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกแผนกครัว</SelectItem>
+                  {kitchenSections.map((section) => (
+                    <SelectItem key={section.id} value={section.id.toString()}>
+                      {section.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="filter-status">สถานะ</Label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger id="filter-status">
+                  <SelectValue placeholder="เลือกสถานะ" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">ทุกสถานะ</SelectItem>
+                  <SelectItem value="available">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600" />
+                      พร้อมจำหน่าย
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="unavailable">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="h-4 w-4 text-gray-500" />
+                      หมด
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {(filterCategory !== "all" || filterKitchen !== "all" || filterStatus !== "all") && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-500">
+                พบ {filteredItems.length} จาก {menuItems.length} เมนู
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setFilterCategory("all");
+                  setFilterKitchen("all");
+                  setFilterStatus("all");
+                }}
+              >
+                ล้างตัวกรอง
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 
