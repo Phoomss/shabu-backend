@@ -280,4 +280,26 @@ export class OrdersService {
 
     return updatedItem;
   }
+
+  async findVoidLogs() {
+    return this.prisma.voidLog.findMany({
+      include: {
+        orderItem: {
+          include: {
+            menuItem: true,
+            order: {
+              include: {
+                session: {
+                  include: {
+                    table: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }

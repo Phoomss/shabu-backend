@@ -35,7 +35,7 @@ export default function VoidLogsPage() {
 
   const fetchVoidLogs = async () => {
     try {
-      const res = await api.get("/voids");
+      const res = await api.get("/orders/void-logs");
       setVoidLogs(res.data.data || []);
     } catch (error) {
       console.error("Failed to fetch void logs:", error);
