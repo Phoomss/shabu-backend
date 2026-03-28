@@ -1,6 +1,5 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -27,9 +26,20 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
-  const router = useRouter();
-  const { setAuth } = useAuthStore();
+  const { setAuth, user } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+
+  // ตรวจสอบว่ามี user แล้วให้ redirect (กรณี refresh)
+  useEffect(() => {
+    if (user) {
+      const path = user.role === "OWNER"
+        ? "/dashboard"
+        : user.role === "KITCHEN"
+        ? "/kds"
+        : "/pos";
+      window.location.href = path; // ใช้ window.location แทน router.push
+    }
+  }, [user]);
 
   const {
     register,
@@ -44,25 +54,29 @@ export default function LoginPage() {
       const res = await api.post("/auth/login", data);
       const { accessToken, user } = res.data.data;
 
+      console.log('=== LOGIN SUCCESS ===');
+      console.log('User:', user);
+      console.log('User Role:', user.role);
+      
       setAuth(user, accessToken);
       toast.success(`ยินดีต้อนรับ ${user.fullName}`);
 
-      // redirect ตาม role
-      switch (user.role.name) {
-        case "OWNER":
-          router.push("/dashboard");
-          break;
-        case "MANAGER":
-        case "STAFF":
-          router.push("/pos");
-          break;
-        case "KITCHEN":
-          router.push("/kds");
-          break;
-        default:
-          router.push("/pos");
-      }
+      // redirect ตาม role - ใช้ window.location.replace
+      const redirectPath = user.role === "OWNER"
+        ? "/dashboard"
+        : user.role === "KITCHEN"
+        ? "/kds"
+        : "/pos";
+
+      console.log('=== REDIRECTING ===');
+      console.log('To:', redirectPath);
+      
+      // ใช้ setTimeout ให้ Zustand ทัน persist token
+      setTimeout(() => {
+        window.location.replace(redirectPath);
+      }, 500);
     } catch (error: any) {
+      console.error('Login error:', error);
       toast.error(error.response?.data?.message ?? "เข้าสู่ระบบไม่สำเร็จ");
     }
   };

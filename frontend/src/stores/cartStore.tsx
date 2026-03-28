@@ -1,9 +1,7 @@
 import { create } from "zustand";
+import type { MenuItem } from "@/types";
 
-interface CartItem {
-  menuItemId: string;
-  name: string;
-  imageUrl?: string;
+export interface CartItem extends MenuItem {
   quantity: number;
 }
 
@@ -11,7 +9,7 @@ interface CartStore {
   sessionId: string | null;
   items: CartItem[];
   setSessionId: (id: string) => void;
-  addItem: (item: Omit<CartItem, "quantity">) => void;
+  addItem: (item: MenuItem) => void;
   removeItem: (menuItemId: string) => void;
   updateQuantity: (menuItemId: string, quantity: number) => void;
   clearCart: () => void;
@@ -23,11 +21,11 @@ export const useCartStore = create<CartStore>((set, get) => ({
   items: [],
   setSessionId: (id) => set({ sessionId: id }),
   addItem: (item) => {
-    const existing = get().items.find((i) => i.menuItemId === item.menuItemId);
+    const existing = get().items.find((i) => i.id === item.id);
     if (existing) {
       set((state) => ({
         items: state.items.map((i) =>
-          i.menuItemId === item.menuItemId
+          i.id === item.id
             ? { ...i, quantity: i.quantity + 1 }
             : i,
         ),
@@ -38,7 +36,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
   },
   removeItem: (menuItemId) =>
     set((state) => ({
-      items: state.items.filter((i) => i.menuItemId !== menuItemId),
+      items: state.items.filter((i) => i.id !== menuItemId),
     })),
   updateQuantity: (menuItemId, quantity) => {
     if (quantity <= 0) {
@@ -47,7 +45,7 @@ export const useCartStore = create<CartStore>((set, get) => ({
     }
     set((state) => ({
       items: state.items.map((i) =>
-        i.menuItemId === menuItemId ? { ...i, quantity } : i,
+        i.id === menuItemId ? { ...i, quantity } : i,
       ),
     }));
   },
