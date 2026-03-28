@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuthStore } from "@/stores/authStore";
-import { getSocket } from "@/lib/socket";
+import { getSocket, addConnectListener, removeConnectListener } from "@/lib/socket";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,66 +43,169 @@ export default function KDSPage() {
   const [orders, setOrders] = useState<OrderItemWithSession[]>([]);
   const [kitchenSections, setKitchenSections] = useState<KitchenSection[]>([]);
   const [selectedSection, setSelectedSection] = useState<string>("all");
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [isVoidDialogOpen, setIsVoidDialogOpen] = useState(false);
   const [selectedVoidItem, setSelectedVoidItem] = useState<OrderItemWithSession | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
+  const kitchenSectionsRef = useRef<KitchenSection[]>([]);
+  const socketRef = useRef<Socket | null>(null);
+  const isSocketInitialized = useRef(false);
 
   useEffect(() => {
-    fetchOrders();
-    fetchKitchenSections();
+    // Register connect callback BEFORE initializing socket
+    const handleConnect = (socketId: string) => {
+      console.log("✅ Socket connected:", socketId);
+      setSocketConnected(true);
+      if (socketRef.current) {
+        joinKitchenRooms(socketRef.current);
+      }
+    };
 
-    // Initialize socket
-    const s = getSocket();
-    setSocket(s);
+    addConnectListener(handleConnect);
 
-    // Join kitchen room for real-time updates
-    s.on("connect", () => {
-      console.log("Socket connected");
-      // Optionally join specific kitchen room
-      // s.emit("kitchen:join", { kitchenId: 1 });
-    });
+    // Store cleanup function
+    socketRef.current = socketRef.current || ({} as any);
+    (socketRef.current as any).cleanup = () => {
+      removeConnectListener(handleConnect);
+      if (socketRef.current) {
+        socketRef.current.off("kitchen:new_order");
+        socketRef.current.off("order:item_status_changed");
+        socketRef.current.off("kitchen:void_order");
+      }
+    };
 
-    // Listen for new orders
-    s.on("kitchen:new_order", (data) => {
-      console.log("New order in kitchen:", data);
-      fetchOrders();
-      toast.success("📋 ออเดอร์ใหม่เข้ามา!");
-    });
+    const initData = async () => {
+      await fetchKitchenSections();
+      // Fetch orders immediately after kitchen sections are loaded
+      console.log("[KDS] Kitchen sections loaded, fetching orders...");
+      await fetchOrders();
+    };
+    initData();
 
-    // Listen for order item status changes
-    s.on("order:item_status_changed", (data) => {
-      console.log("Order item status changed:", data);
-      fetchOrders();
-    });
+    // Initialize socket only once
+    if (!isSocketInitialized.current) {
+      const s = getSocket();
+      socketRef.current = s;
 
-    // Listen for void orders
-    s.on("kitchen:void_order", (data) => {
-      console.log("Order voided:", data);
-      fetchOrders();
-      toast.warning(`⚠️ ยกเลิกออเดอร์: ${data.reason}`);
-    });
+      console.log("[KDS] Socket object created:", !!s);
+      console.log("[KDS] Socket connected status:", s.connected);
+
+      // If already connected, call immediately
+      if (s.connected) {
+        console.log("[KDS] Socket already connected, joining rooms now");
+        handleConnect(s.id || 'unknown');
+      }
+
+      // Listen for new orders
+      s.on("kitchen:new_order", (data) => {
+        console.log("🔔 [KDS] Received kitchen:new_order event:", data);
+        fetchOrders();
+        toast.success("📋 ออเดอร์ใหม่เข้ามา!");
+      });
+
+      // Listen for order item status changes
+      s.on("order:item_status_changed", (data) => {
+        console.log("🔔 [KDS] Received order:item_status_changed event:", data);
+        fetchOrders();
+      });
+
+      // Listen for void orders
+      s.on("kitchen:void_order", (data) => {
+        console.log("🔔 [KDS] Received kitchen:void_order event:", data);
+        fetchOrders();
+        toast.warning(`⚠️ ยกเลิกออเดอร์: ${data.reason}`);
+      });
+
+      isSocketInitialized.current = true;
+    } else {
+      console.log("[KDS] Socket already initialized, skipping");
+      // If socket exists and is connected, join rooms and fetch orders
+      if (socketRef.current?.connected) {
+        console.log("[KDS] Re-joining kitchen rooms and fetching orders");
+        joinKitchenRooms(socketRef.current);
+        fetchOrders();
+      }
+    }
 
     return () => {
-      s.off("connect");
-      s.off("kitchen:new_order");
-      s.off("order:item_status_changed");
-      s.off("kitchen:void_order");
+      // Cleanup listeners
+      const s = socketRef.current;
+      if (s && (s as any).cleanup) {
+        (s as any).cleanup();
+      }
     };
   }, []);
 
+  const joinKitchenRooms = (s: Socket) => {
+    const sections = kitchenSectionsRef.current;
+    console.log("[KDS] Joining kitchen rooms:", sections);
+    if (sections.length > 0) {
+      sections.forEach((kitchen) => {
+        s.emit("kitchen:join", { kitchenId: kitchen.id });
+        console.log(`🔗 Joined kitchen: ${kitchen.id}`);
+      });
+    } else {
+      console.warn("[KDS] No kitchen sections to join!");
+    }
+  };
+
+  // Re-join kitchen rooms when kitchenSections state changes
+  useEffect(() => {
+    if (kitchenSections.length > 0 && socketRef.current && socketConnected) {
+      console.log("[KDS] Kitchen sections updated, joining rooms...");
+      joinKitchenRooms(socketRef.current);
+    }
+  }, [kitchenSections, socketConnected]);
+
   const fetchOrders = async () => {
     try {
-      const res = await api.get("/orders/kitchen");
-      setOrders(res.data.data || []);
+      const sections = kitchenSectionsRef.current;
+      console.log("🔍 [KDS] Fetching orders for kitchens:", sections);
+
+      if (sections.length === 0) {
+        console.log("⚠️ [KDS] No kitchen sections found, skipping fetch");
+        return;
+      }
+
+      // Fetch from all kitchens by trying each section
+      const allOrders: OrderItemWithSession[] = [];
+      for (const kitchen of sections) {
+        try {
+          const url = `/orders/kitchen/${kitchen.id}`;
+          console.log(`📡 [KDS] Fetching: ${url}`);
+          const res = await api.get(url);
+          console.log(`✅ [KDS] Kitchen ${kitchen.id} response:`, res.data);
+
+          const items = Array.isArray(res.data) ? res.data : (res.data.data || []);
+          console.log(`📦 [KDS] Kitchen ${kitchen.id} items count: ${items.length}`);
+
+          // Map to include tableNumber from order.session.table.number
+          const mappedItems = items.map((item: any) => ({
+            ...item,
+            tableNumber: item.order?.session?.table?.number || 'N/A',
+            tableId: item.order?.session?.table?.id || 0,
+          }));
+          allOrders.push(...mappedItems);
+        } catch (error: any) {
+          console.log(`❌ [KDS] Kitchen ${kitchen.id} error:`, error.response?.status, error.response?.data);
+          // Skip if kitchen has no orders
+        }
+      }
+      console.log("🎯 [KDS] All orders:", allOrders);
+      setOrders(allOrders);
     } catch (error) {
-      console.error("Failed to fetch orders:", error);
+      console.error("💥 [KDS] Failed to fetch orders:", error);
     }
   };
 
   const fetchKitchenSections = async () => {
     try {
       const res = await api.get("/kitchens");
-      setKitchenSections(res.data.data || []);
+      console.log("Kitchen sections:", res.data);
+      // Service returns array directly, not wrapped in { data: ... }
+      const sections = Array.isArray(res.data) ? res.data : (res.data.data || []);
+      console.log("Parsed kitchen sections:", sections);
+      setKitchenSections(sections);
+      kitchenSectionsRef.current = sections; // Update ref
     } catch (error) {
       console.error("Failed to fetch kitchen sections:", error);
     }
@@ -118,7 +221,7 @@ export default function KDSPage() {
       fetchOrders();
 
       // Emit socket event for real-time update
-      socket?.emit("update-order-item", {
+      socketRef.current?.emit("update-order-item", {
         orderItemId,
         status,
       });
@@ -177,7 +280,7 @@ export default function KDSPage() {
   const groupedOrders = orders
     .filter((order) => {
       if (selectedSection === "all") return true;
-      return order.kitchen.id.toString() === selectedSection;
+      return order.kitchen?.id?.toString() === selectedSection;
     })
     .reduce(
       (acc, order) => {
@@ -206,10 +309,15 @@ export default function KDSPage() {
       >
     );
 
+  console.log("[KDS] Orders:", orders.length);
+  console.log("[KDS] Grouped orders:", groupedOrders);
+
   // Sort by time (oldest first)
   const sortedGroups = Object.values(groupedOrders).sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
+
+  console.log("[KDS] Sorted groups:", sortedGroups.length);
 
   const pendingCount = orders.filter((o) => o.status === "PENDING").length;
   const preparingCount = orders.filter((o) => o.status === "PREPARING").length;

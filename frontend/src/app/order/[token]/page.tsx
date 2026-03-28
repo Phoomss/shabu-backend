@@ -148,7 +148,7 @@ export default function CustomerOrderPage() {
   const fetchOrders = async () => {
     if (!session) return;
     try {
-      const res = await api.get(`/orders?sessionId=${session.id}`);
+      const res = await api.get(`/orders?sessionId=${session.id}`).catch(() => ({ data: { data: [] } }));
       setOrders(res.data.data || []);
     } catch (error) {
       console.error("Failed to fetch orders:", error);
@@ -192,14 +192,20 @@ export default function CustomerOrderPage() {
     try {
       const orderItems = cart.map((item) => ({
         menuItemId: item.id,
-        kitchenId: item.kitchen.id,
         quantity: item.quantity,
       }));
 
-      await api.post("/orders", {
+      console.log("Submitting order:", {
         sessionId: session.id,
         items: orderItems,
       });
+
+      const response = await api.post("/orders", {
+        sessionId: session.id,
+        items: orderItems,
+      });
+
+      console.log("Order created:", response.data);
 
       toast.success("ส่งออเดอร์สำเร็จ!");
       setCart([]);
@@ -212,6 +218,7 @@ export default function CustomerOrderPage() {
       });
     } catch (error: any) {
       console.error("Failed to submit order:", error);
+      console.error("Error response:", error.response?.data);
       toast.error(error.response?.data?.message || "ส่งออเดอร์ไม่สำเร็จ");
     }
   };
