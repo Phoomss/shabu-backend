@@ -47,6 +47,8 @@ export default function SessionsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [selectedTable, setSelectedTable] = useState("");
   const [selectedTier, setSelectedTier] = useState("");
+  const [adultCount, setAdultCount] = useState(2);
+  const [childCount, setChildCount] = useState(0);
   const [filter, setFilter] = useState<"all" | "ACTIVE" | "CLOSED" | "EXPIRED">("all");
 
   useEffect(() => {
@@ -96,11 +98,15 @@ export default function SessionsPage() {
       await api.post("/sessions", {
         tableId: parseInt(selectedTable),
         tierId: parseInt(selectedTier),
+        adultCount: parseInt(adultCount.toString()),
+        childCount: parseInt(childCount.toString()),
       });
       toast.success("เปิดเซสชันสำเร็จ");
       setIsCreateOpen(false);
       setSelectedTable("");
       setSelectedTier("");
+      setAdultCount(2);
+      setChildCount(0);
       fetchData();
     } catch (error: any) {
       console.error("Failed to create session:", error);
@@ -208,6 +214,28 @@ export default function SessionsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>จำนวนผู้ใหญ่</Label>
+                  <Input
+                    type="number"
+                    value={adultCount}
+                    onChange={(e) => setAdultCount(parseInt(e.target.value) || 0)}
+                    placeholder="2"
+                    min="1"
+                  />
+                </div>
+                <div>
+                  <Label>จำนวนเด็ก</Label>
+                  <Input
+                    type="number"
+                    value={childCount}
+                    onChange={(e) => setChildCount(parseInt(e.target.value) || 0)}
+                    placeholder="0"
+                    min="0"
+                  />
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setIsCreateOpen(false)}>
