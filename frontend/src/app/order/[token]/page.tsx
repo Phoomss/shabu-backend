@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getSocket } from "@/lib/socket";
-import api from "@/lib/api";
+import { publicApi } from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Utensils,
@@ -47,6 +54,7 @@ export default function CustomerOrderPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [timeLeft, setTimeLeft] = useState(0);
@@ -60,23 +68,18 @@ export default function CustomerOrderPage() {
 
     fetchData();
 
-    // Initialize socket
     const s = getSocket();
     setSocket(s);
 
-    // Join session room
     s.on("connect", () => {
       console.log("Socket connected");
-      // s.emit("session:join", { sessionId: session?.id });
     });
 
-    // Listen for order status updates
     s.on("order:item_status_changed", (data) => {
       console.log("Order item status changed:", data);
       fetchOrders();
     });
 
-    // Listen for menu availability changes
     s.on("menu:availability_changed", (data) => {
       console.log("Menu availability changed:", data);
       setMenuItems((prev) =>
@@ -89,7 +92,6 @@ export default function CustomerOrderPage() {
       }
     });
 
-    // Listen for session time warnings
     s.on("session:time_warning", (data) => {
       if (data.sessionId === session?.id) {
         toast.warning(`⏰ เวลาเหลือ ${data.minutesLeft} นาที`);
@@ -104,7 +106,6 @@ export default function CustomerOrderPage() {
     };
   }, [token, router]);
 
-  // Update timer every minute
   useEffect(() => {
     if (!session) return;
 
@@ -112,7 +113,7 @@ export default function CustomerOrderPage() {
       const now = Date.now();
       const end = new Date(session.endTime).getTime();
       const remaining = Math.max(0, end - now);
-      setTimeLeft(Math.floor(remaining / 60000)); // minutes
+      setTimeLeft(Math.floor(remaining / 60000));
     };
 
     updateTimer();
@@ -124,8 +125,8 @@ export default function CustomerOrderPage() {
   const fetchData = async () => {
     try {
       const [sessionRes, menuRes] = await Promise.all([
-        api.get(`/sessions/qr/${token}`).catch(() => ({ data: { data: null } })),
-        api.get("/menu-items").catch(() => ({ data: { data: [] } })),
+        publicApi.get(`/sessions/qr/${token}`).catch(() => ({ data: { data: null } })),
+        publicApi.get("/menu-items").catch(() => ({ data: { data: [] } })),
       ]);
 
       if (!sessionRes.data.data) {
@@ -148,7 +149,7 @@ export default function CustomerOrderPage() {
   const fetchOrders = async () => {
     if (!session) return;
     try {
-      const res = await api.get(`/orders?sessionId=${session.id}`).catch(() => ({ data: { data: [] } }));
+      const res = await publicApi.get(`/orders?sessionId=${session.id}`).catch(() => ({ data: { data: [] } }));
       setOrders(res.data.data || []);
     } catch (error) {
       console.error("Failed to fetch orders:", error);
@@ -195,30 +196,21 @@ export default function CustomerOrderPage() {
         quantity: item.quantity,
       }));
 
-      console.log("Submitting order:", {
+      const response = await publicApi.post("/orders", {
         sessionId: session.id,
         items: orderItems,
       });
-
-      const response = await api.post("/orders", {
-        sessionId: session.id,
-        items: orderItems,
-      });
-
-      console.log("Order created:", response.data);
 
       toast.success("ส่งออเดอร์สำเร็จ!");
       setCart([]);
       fetchOrders();
 
-      // Emit socket event
       socket?.emit("new-order", {
         sessionId: session.id,
         items: orderItems,
       });
     } catch (error: any) {
       console.error("Failed to submit order:", error);
-      console.error("Error response:", error.response?.data);
       toast.error(error.response?.data?.message || "ส่งออเดอร์ไม่สำเร็จ");
     }
   };
@@ -401,66 +393,127 @@ export default function CustomerOrderPage() {
         </div>
       </main>
 
-      {/* Floating Cart */}
-      {cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
-          <div className="max-w-7xl mx-auto px-4 py-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <ShoppingCart className="h-5 w-5" />
-                <span className="font-medium">ตะกร้าสินค้า ({cartTotal} รายการ)</span>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setCart([])}>
-                ล้างตะกร้า
-              </Button>
+      {/* Floating Cart Button */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
+        <Button
+          className="w-full h-16 text-lg font-bold bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 shadow-2xl rounded-full"
+          onClick={() => setIsCartOpen(true)}
+          disabled={cart.length === 0}
+        >
+          <ShoppingCart className="h-6 w-6 mr-2" />
+          ตะกร้า ({cartTotal})
+          {cartTotal > 0 && (
+            <Badge className="ml-2 bg-white text-red-600 hover:bg-white">
+              {cartTotal} รายการ
+            </Badge>
+          )}
+        </Button>
+      </div>
+
+      {/* Cart Sheet */}
+      <Sheet open={isCartOpen} onOpenChange={setIsCartOpen}>
+        <SheetContent className="sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5" />
+              ตะกร้าสินค้า
+            </SheetTitle>
+          </SheetHeader>
+
+          {cart.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-gray-400 mt-8">
+              <ShoppingCart className="h-16 w-16 mb-4" />
+              <p>ยังไม่มีสินค้าในตะกร้า</p>
             </div>
-            <ScrollArea className="h-32">
-              <div className="space-y-2">
-                {cart.map((item) => (
-                  <div key={item.id} className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm font-medium">{item.name}</p>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => updateQuantity(item.id, -1)}
-                        >
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <span className="text-sm w-8 text-center">{item.quantity}</span>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          className="h-7 w-7"
-                          onClick={() => updateQuantity(item.id, 1)}
-                        >
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-500"
-                      onClick={() => removeFromCart(item.id)}
-                    >
-                      <Plus className="h-4 w-4 rotate-45" />
-                    </Button>
-                  </div>
-                ))}
+          ) : (
+            <>
+              <ScrollArea className="flex-1 my-4 h-[calc(100vh-250px)]">
+                <div className="space-y-3">
+                  {cart.map((item) => (
+                    <Card key={item.id} className="overflow-hidden">
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-16 w-16 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0">
+                            {item.imageUrl ? (
+                              <Image
+                                src={item.imageUrl}
+                                alt={item.name}
+                                width={64}
+                                height={64}
+                                className="object-cover"
+                              />
+                            ) : (
+                              <div className="flex items-center justify-center h-full">
+                                <Utensils className="h-6 w-6 text-gray-300" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{item.name}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => updateQuantity(item.id, -1)}
+                              >
+                                <Minus className="h-3 w-3" />
+                              </Button>
+                              <span className="font-bold w-8 text-center">{item.quantity}</span>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => updateQuantity(item.id, 1)}
+                              >
+                                <Plus className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-red-500 hover:bg-red-50"
+                            onClick={() => removeFromCart(item.id)}
+                          >
+                            <Plus className="h-4 w-4 rotate-45" />
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+
+              <Separator className="my-4" />
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-lg font-bold">
+                  <span>รวมทั้งสิ้น</span>
+                  <span className="text-red-600">{cartTotal} รายการ</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setCart([])}
+                  >
+                    ล้างตะกร้า
+                  </Button>
+                  <Button
+                    className="flex-1 bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
+                    size="lg"
+                    onClick={submitOrder}
+                  >
+                    <CheckCircle className="h-5 w-5 mr-2" />
+                    ส่งออเดอร์
+                  </Button>
+                </div>
               </div>
-            </ScrollArea>
-            <Separator className="my-3" />
-            <div className="flex gap-2">
-              <Button className="flex-1" size="lg" onClick={submitOrder}>
-                ส่งออเดอร์ ({cartTotal} รายการ)
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Order History Dialog */}
       <Dialog open={isOrderHistoryOpen} onOpenChange={setIsOrderHistoryOpen}>

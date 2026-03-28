@@ -39,3 +39,9 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// Public API client — ไม่ใช้ authentication (สำหรับ QR ordering)
+export const publicApi = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  withCredentials: true,
+});
