@@ -2,140 +2,156 @@
 
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
-import api from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DollarSign,
   Users,
-  Utensils,
+  ShoppingCart,
+  AlertTriangle,
   TrendingUp,
   Clock,
-  CheckCircle2,
-  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Utensils,
 } from "lucide-react";
+import { Socket } from "socket.io-client";
+import api from "@/lib/api";
 
 interface DashboardStats {
+  totalRevenue: number;
   todayRevenue: number;
+  totalOrders: number;
   todayOrders: number;
   activeTables: number;
-  pendingOrders: number;
+  totalTables: number;
+  lowStockIngredients: number;
 }
 
-interface RecentOrder {
-  id: string;
+interface RecentInvoice {
+  id: number;
   tableNumber: string;
-  totalAmount: number;
-  status: string;
+  netAmount: number;
+  paymentMethod: string;
   createdAt: string;
 }
 
-interface TableStatus {
+interface LowStockIngredient {
   id: number;
-  number: string;
-  zone?: string;
-  status: "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
+  name: string;
+  currentStock: number;
+  unit: string;
 }
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const [stats, setStats] = useState<DashboardStats>({
+    totalRevenue: 0,
     todayRevenue: 0,
+    totalOrders: 0,
     todayOrders: 0,
     activeTables: 0,
-    pendingOrders: 0,
+    totalTables: 0,
+    lowStockIngredients: 0,
   });
-  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
-  const [tables, setTables] = useState<TableStatus[]>([]);
+  const [recentInvoices, setRecentInvoices] = useState<RecentInvoice[]>([]);
+  const [lowStockItems, setLowStockItems] = useState<LowStockIngredient[]>([]);
+  const [socket, setSocket] = useState<Socket | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardStats();
+    fetchRecentInvoices();
+    fetchLowStockIngredients();
+
+    // Initialize socket
+    const s = getSocket();
+    setSocket(s);
+
+    s.on("invoice:new", (data) => {
+      console.log("New invoice:", data);
+      fetchDashboardStats();
+      fetchRecentInvoices();
+    });
+
+    s.on("ingredient:low_stock", (data) => {
+      console.log("Low stock alert:", data);
+      fetchLowStockIngredients();
+    });
+
+    return () => {
+      s.off("invoice:new");
+      s.off("ingredient:low_stock");
+    };
   }, []);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardStats = async () => {
     try {
-      // In a real implementation, you would have a dedicated dashboard API endpoint
-      // For now, we'll fetch data from multiple endpoints
-      const [tablesRes] = await Promise.all([
-        api.get("/tables").catch(() => ({ data: { data: [] } })),
-      ]);
-
-      setTables(tablesRes.data.data || []);
-
-      // Mock stats for now - will be replaced with real API calls
-      setStats({
-        todayRevenue: 15420,
-        todayOrders: 45,
-        activeTables: 8,
-        pendingOrders: 12,
-      });
-
-      setRecentOrders([
-        {
-          id: "ORD-001",
-          tableNumber: "T1",
-          totalAmount: 850,
-          status: "CONFIRMED",
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "ORD-002",
-          tableNumber: "T5",
-          totalAmount: 1200,
-          status: "PENDING",
-          createdAt: new Date().toISOString(),
-        },
-        {
-          id: "ORD-003",
-          tableNumber: "T3",
-          totalAmount: 650,
-          status: "CONFIRMED",
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      const res = await api.get("/dashboard/stats").catch(() => ({ data: { data: null } }));
+      if (res.data.data) {
+        setStats(res.data.data);
+      }
     } catch (error) {
-      console.error("Failed to fetch dashboard data:", error);
+      console.error("Failed to fetch dashboard stats:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "CONFIRMED":
-        return <Badge variant="success">ยืนยันแล้ว</Badge>;
-      case "PENDING":
-        return <Badge variant="warning">รอดำเนินการ</Badge>;
-      case "CANCELLED":
-        return <Badge variant="destructive">ยกเลิก</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
+  const fetchRecentInvoices = async () => {
+    try {
+      const res = await api.get("/invoices?limit=5");
+      setRecentInvoices(res.data.data?.slice(0, 5) || []);
+    } catch (error) {
+      console.error("Failed to fetch recent invoices:", error);
     }
   };
 
-  const getTableStatusBadge = (status: string) => {
-    switch (status) {
-      case "AVAILABLE":
-        return <Badge variant="success">ว่าง</Badge>;
-      case "OCCUPIED":
-        return <Badge variant="default">มีลูกค้า</Badge>;
-      case "RESERVED":
-        return <Badge variant="warning">จองไว้</Badge>;
-      case "CLEANING":
-        return <Badge variant="secondary">ทำความสะอาด</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
+  const fetchLowStockIngredients = async () => {
+    try {
+      const res = await api.get("/ingredients");
+      const ingredients = res.data.data || [];
+      const lowStock = ingredients.filter(
+        (ing: any) => ing.currentStock < (ing.maxStock || 100) * 0.2
+      );
+      setLowStockItems(lowStock);
+    } catch (error) {
+      console.error("Failed to fetch low stock ingredients:", error);
     }
   };
+
+  const statCards = [
+    {
+      title: "รายได้วันนี้",
+      value: `฿${stats.todayRevenue.toLocaleString()}`,
+      icon: DollarSign,
+      color: "text-green-600",
+      bgColor: "bg-green-100",
+    },
+    {
+      title: "ออเดอร์วันนี้",
+      value: stats.todayOrders.toString(),
+      icon: ShoppingCart,
+      color: "text-blue-600",
+      bgColor: "bg-blue-100",
+    },
+    {
+      title: "โต๊ะที่ใช้งาน",
+      value: `${stats.activeTables}/${stats.totalTables}`,
+      icon: Users,
+      color: "text-purple-600",
+      bgColor: "bg-purple-100",
+    },
+    {
+      title: "วัตถุดิบใกล้หมด",
+      value: stats.lowStockIngredients.toString(),
+      icon: AlertTriangle,
+      color: "text-red-600",
+      bgColor: "bg-red-100",
+    },
+  ];
 
   if (loading) {
     return (
@@ -150,134 +166,138 @@ export default function DashboardPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-gray-500">ภาพรวมการขายและการจัดการร้าน</p>
+        <p className="text-gray-500">ภาพรวมร้านอาหารและสถิติ</p>
       </div>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">รายได้วันนี้</CardTitle>
-            <DollarSign className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              ฿{stats.todayRevenue.toLocaleString()}
-            </div>
-            <p className="text-xs text-gray-500 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-green-500" />
-              +20.1% จากเมื่อวาน
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">ออเดอร์วันนี้</CardTitle>
-            <Utensils className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.todayOrders}</div>
-            <p className="text-xs text-gray-500 flex items-center gap-1">
-              <TrendingUp className="h-3 w-3 text-green-500" />
-              +15% จากเมื่อวาน
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">โต๊ะที่ใช้งาน</CardTitle>
-            <Users className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeTables}</div>
-            <p className="text-xs text-gray-500">
-              จาก 20 โต๊ะ
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">รอดำเนินการ</CardTitle>
-            <Clock className="h-4 w-4 text-gray-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.pendingOrders}</div>
-            <p className="text-xs text-gray-500 flex items-center gap-1">
-              <AlertCircle className="h-3 w-3 text-yellow-500" />
-              ต้องจัดการ
-            </p>
-          </CardContent>
-        </Card>
+        {statCards.map((stat) => (
+          <Card key={stat.title}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+              <stat.icon className={`h-4 w-4 ${stat.color}`} />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stat.value}</div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Main Content Grid */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Recent Orders */}
+        {/* Recent Invoices */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle2 className="h-5 w-5" />
-              ออเดอร์ล่าสุด
+              <TrendingUp className="h-5 w-5" />
+              ใบเสร็จล่าสุด
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ออเดอร์</TableHead>
-                  <TableHead>โต๊ะ</TableHead>
-                  <TableHead>ยอดรวม</TableHead>
-                  <TableHead>สถานะ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentOrders.map((order) => (
-                  <TableRow key={order.id}>
-                    <TableCell className="font-medium">{order.id}</TableCell>
-                    <TableCell>{order.tableNumber}</TableCell>
-                    <TableCell>฿{order.totalAmount.toLocaleString()}</TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <ScrollArea className="h-[300px]">
+              {recentInvoices.length === 0 ? (
+                <p className="text-center text-gray-500 py-8">ยังไม่มีใบเสร็จ</p>
+              ) : (
+                <div className="space-y-3">
+                  {recentInvoices.map((invoice) => (
+                    <div
+                      key={invoice.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                    >
+                      <div>
+                        <p className="font-medium">โต๊ะ {invoice.tableNumber}</p>
+                        <p className="text-sm text-gray-500">{invoice.paymentMethod}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold">฿{invoice.netAmount.toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(invoice.createdAt).toLocaleTimeString("th-TH")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
           </CardContent>
         </Card>
 
-        {/* Table Status */}
+        {/* Low Stock Alerts */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Utensils className="h-5 w-5" />
-              สถานะโต๊ะ
+              <AlertTriangle className="h-5 w-5 text-red-600" />
+              แจ้งเตือนวัตถุดิบใกล้หมด
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-3">
-              {tables.length === 0 ? (
-                <p className="text-gray-500 col-span-3 text-center py-4">
-                  ยังไม่มีข้อมูลโต๊ะ
-                </p>
+            <ScrollArea className="h-[300px]">
+              {lowStockItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-gray-500 py-8">
+                  <CheckCircle className="h-12 w-12 text-green-600 mb-2" />
+                  <p>วัตถุดิบเพียงพอ</p>
+                </div>
               ) : (
-                tables.map((table) => (
-                  <Card key={table.id} className="p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">โต๊ะ {table.number}</p>
-                        <p className="text-xs text-gray-500">{table.zone || "-"}</p>
+                <div className="space-y-3">
+                  {lowStockItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center justify-between p-3 bg-red-50 rounded-lg"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Utensils className="h-5 w-5 text-red-600" />
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-gray-500">หน่วย: {item.unit}</p>
+                        </div>
                       </div>
-                      {getTableStatusBadge(table.status)}
+                      <Badge variant="destructive">
+                        {item.currentStock} {item.unit}
+                      </Badge>
                     </div>
-                  </Card>
-                ))
+                  ))}
+                </div>
               )}
-            </div>
+            </ScrollArea>
           </CardContent>
         </Card>
       </div>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle>การกระทำด่วน</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <a href="/pos">
+              <div className="flex flex-col items-center justify-center p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer">
+                <ShoppingCart className="h-8 w-8 text-blue-600 mb-2" />
+                <span className="font-medium">POS</span>
+              </div>
+            </a>
+            <a href="/kds">
+              <div className="flex flex-col items-center justify-center p-4 bg-green-50 rounded-lg hover:bg-green-100 transition-colors cursor-pointer">
+                <Utensils className="h-8 w-8 text-green-600 mb-2" />
+                <span className="font-medium">ห้องครัว</span>
+              </div>
+            </a>
+            <a href="/tables">
+              <div className="flex flex-col items-center justify-center p-4 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors cursor-pointer">
+                <Users className="h-8 w-8 text-purple-600 mb-2" />
+                <span className="font-medium">จัดการโต๊ะ</span>
+              </div>
+            </a>
+            <a href="/menus">
+              <div className="flex flex-col items-center justify-center p-4 bg-orange-50 rounded-lg hover:bg-orange-100 transition-colors cursor-pointer">
+                <CheckCircle className="h-8 w-8 text-orange-600 mb-2" />
+                <span className="font-medium">เมนู</span>
+              </div>
+            </a>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

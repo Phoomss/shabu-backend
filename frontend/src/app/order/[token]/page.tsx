@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import api from "@/lib/api";
 import { getSocket } from "@/lib/socket";
+import api from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,8 +16,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Utensils, ShoppingCart, Plus, Minus, Clock, CheckCircle } from "lucide-react";
-import type { MenuItem, Session } from "@/types";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Utensils,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  ChefHat,
+  Timer,
+} from "lucide-react";
+import type { MenuItem, Session, Order } from "@/types";
 import { Socket } from "socket.io-client";
 import Image from "next/image";
 
@@ -33,10 +44,12 @@ export default function CustomerOrderPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [timeLeft, setTimeLeft] = useState(0);
 
   useEffect(() => {
     if (!token) {
@@ -51,21 +64,67 @@ export default function CustomerOrderPage() {
     const s = getSocket();
     setSocket(s);
 
-    s.on("order-status-update", (data) => {
-      console.log("Order status updated:", data);
+    // Join session room
+    s.on("connect", () => {
+      console.log("Socket connected");
+      // s.emit("session:join", { sessionId: session?.id });
+    });
+
+    // Listen for order status updates
+    s.on("order:item_status_changed", (data) => {
+      console.log("Order item status changed:", data);
       fetchOrders();
-      toast.success("สถานะออเดอร์อัปเดตแล้ว");
+    });
+
+    // Listen for menu availability changes
+    s.on("menu:availability_changed", (data) => {
+      console.log("Menu availability changed:", data);
+      setMenuItems((prev) =>
+        prev.map((item) =>
+          item.id === data.menuItemId ? { ...item, isAvailable: data.isAvailable } : item
+        )
+      );
+      if (!data.isAvailable) {
+        toast.warning(`${data.name} หมดชั่วคราว`);
+      }
+    });
+
+    // Listen for session time warnings
+    s.on("session:time_warning", (data) => {
+      if (data.sessionId === session?.id) {
+        toast.warning(`⏰ เวลาเหลือ ${data.minutesLeft} นาที`);
+      }
     });
 
     return () => {
-      s.off("order-status-update");
+      s.off("connect");
+      s.off("order:item_status_changed");
+      s.off("menu:availability_changed");
+      s.off("session:time_warning");
     };
   }, [token, router]);
+
+  // Update timer every minute
+  useEffect(() => {
+    if (!session) return;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const end = new Date(session.endTime).getTime();
+      const remaining = Math.max(0, end - now);
+      setTimeLeft(Math.floor(remaining / 60000)); // minutes
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 60000);
+
+    return () => clearInterval(interval);
+  }, [session]);
 
   const fetchData = async () => {
     try {
       const [sessionRes, menuRes] = await Promise.all([
-        api.get(`/sessions/token/${token}`).catch(() => ({ data: { data: null } })),
+        api.get(`/sessions/qr/${token}`).catch(() => ({ data: { data: null } })),
         api.get("/menu-items").catch(() => ({ data: { data: [] } })),
       ]);
 
@@ -89,7 +148,7 @@ export default function CustomerOrderPage() {
   const fetchOrders = async () => {
     if (!session) return;
     try {
-      const res = await api.get(`/orders/session/${session.id}`);
+      const res = await api.get(`/orders?sessionId=${session.id}`);
       setOrders(res.data.data || []);
     } catch (error) {
       console.error("Failed to fetch orders:", error);
@@ -97,6 +156,11 @@ export default function CustomerOrderPage() {
   };
 
   const addToCart = (item: MenuItem) => {
+    if (!item.isAvailable) {
+      toast.warning("เมนูนี้หมดชั่วคราว");
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find((i) => i.id === item.id);
       if (existing) {
@@ -169,13 +233,58 @@ export default function CustomerOrderPage() {
           </Badge>
         );
       case "CANCELLED":
-        return <Badge variant="destructive">ยกเลิก</Badge>;
+        return (
+          <Badge variant="destructive" className="gap-1">
+            <AlertCircle className="h-3 w-3" />
+            ยกเลิก
+          </Badge>
+        );
+      default:
+        return <Badge>{status}</Badge>;
+    }
+  };
+
+  const getItemStatusBadge = (status: string) => {
+    switch (status) {
+      case "PENDING":
+        return <Badge variant="warning">รอดำเนินการ</Badge>;
+      case "PREPARING":
+        return (
+          <Badge variant="default" className="gap-1">
+            <ChefHat className="h-3 w-3" />
+            กำลังทำ
+          </Badge>
+        );
+      case "SERVED":
+        return (
+          <Badge variant="success" className="gap-1">
+            <CheckCircle className="h-3 w-3" />
+            เสิร์ฟแล้ว
+          </Badge>
+        );
+      case "VOIDED":
+        return (
+          <Badge variant="destructive" className="gap-1">
+            <AlertCircle className="h-3 w-3" />
+            ยกเลิก
+          </Badge>
+        );
       default:
         return <Badge>{status}</Badge>;
     }
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const categories = Array.from(
+    new Map(
+      menuItems.map((item) => [item.category.id, item.category])
+    ).values()
+  );
+
+  const filteredItems = selectedCategory === "all"
+    ? menuItems
+    : menuItems.filter((item) => item.category.id.toString() === selectedCategory);
 
   if (loading) {
     return (
@@ -190,9 +299,9 @@ export default function CustomerOrderPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 pb-32">
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className="bg-white shadow-sm sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div>
@@ -201,62 +310,93 @@ export default function CustomerOrderPage() {
                 โต๊ะ {session.table.number} - {session.tier.name}
               </p>
             </div>
-            <Button
-              variant="outline"
-              onClick={() => setIsOrderHistoryOpen(true)}
-            >
-              ประวัติออเดอร์
-            </Button>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-sm">
+                <Timer className="h-4 w-4" />
+                <span className={timeLeft < 15 ? "text-red-600 font-bold" : ""}>
+                  {timeLeft} นาที
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsOrderHistoryOpen(true)}
+              >
+                ประวัติออเดอร์
+              </Button>
+            </div>
           </div>
           <div className="mt-3 flex items-center gap-4 text-sm">
             <Badge variant={session.status === "ACTIVE" ? "success" : "secondary"}>
               {session.status === "ACTIVE" ? "กำลังทาน" : "ปิดโต๊ะแล้ว"}
             </Badge>
-            <span className="text-gray-500">
-              เวลาที่เหลือ: {Math.max(0, Math.floor((new Date(session.endTime).getTime() - Date.now()) / 60000))} นาที
-            </span>
+            {timeLeft < 15 && (
+              <Badge variant="destructive" className="gap-1">
+                <AlertCircle className="h-3 w-3" />
+                เวลาใกล้หมด
+              </Badge>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-6 pb-32">
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        {/* Category Tabs */}
+        <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="mb-6">
+          <TabsList className="w-full justify-start overflow-x-auto">
+            <TabsTrigger value="all">ทั้งหมด</TabsTrigger>
+            {categories.map((cat) => (
+              <TabsTrigger key={cat.id} value={cat.id.toString()}>
+                {cat.name}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+
         {/* Menu Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {menuItems
-            .filter((item) => item.isAvailable)
-            .map((item) => (
-              <Card
-                key={item.id}
-                className="cursor-pointer hover:shadow-lg transition-shadow"
-                onClick={() => addToCart(item)}
-              >
-                <div className="aspect-square relative bg-gray-100 rounded-t-lg overflow-hidden">
-                  {item.imageUrl ? (
-                    <Image
-                      src={item.imageUrl}
-                      alt={item.name}
-                      fill
-                      className="object-cover"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <Utensils className="h-12 w-12 text-gray-300" />
-                    </div>
-                  )}
-                </div>
-                <CardContent className="p-3">
-                  <p className="font-medium text-sm line-clamp-2">{item.name}</p>
-                  <p className="text-xs text-gray-500">{item.category.name}</p>
-                </CardContent>
-              </Card>
-            ))}
+          {filteredItems.map((item) => (
+            <Card
+              key={item.id}
+              className={`cursor-pointer transition-all ${
+                item.isAvailable
+                  ? "hover:shadow-lg hover:scale-105"
+                  : "opacity-50 cursor-not-allowed"
+              }`}
+              onClick={() => addToCart(item)}
+            >
+              <div className="aspect-square relative bg-gray-100 rounded-t-lg overflow-hidden">
+                {item.imageUrl ? (
+                  <Image
+                    src={item.imageUrl}
+                    alt={item.name}
+                    fill
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full">
+                    <Utensils className="h-12 w-12 text-gray-300" />
+                  </div>
+                )}
+                {!item.isAvailable && (
+                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                    <Badge variant="destructive">หมด</Badge>
+                  </div>
+                )}
+              </div>
+              <CardContent className="p-3">
+                <p className="font-medium text-sm line-clamp-2">{item.name}</p>
+                <p className="text-xs text-gray-500">{item.category.name}</p>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </main>
 
       {/* Floating Cart */}
       {cart.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg z-50">
           <div className="max-w-7xl mx-auto px-4 py-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -308,7 +448,7 @@ export default function CustomerOrderPage() {
             <Separator className="my-3" />
             <div className="flex gap-2">
               <Button className="flex-1" size="lg" onClick={submitOrder}>
-                ส่งออเดอร์
+                ส่งออเดอร์ ({cartTotal} รายการ)
               </Button>
             </div>
           </div>
@@ -330,20 +470,26 @@ export default function CustomerOrderPage() {
                   <Card key={order.id}>
                     <CardHeader className="pb-2">
                       <div className="flex items-center justify-between">
-                        <CardTitle className="text-base">
-                          {new Date(order.createdAt).toLocaleTimeString("th-TH")}
-                        </CardTitle>
+                        <div>
+                          <p className="text-sm text-gray-500">
+                            {new Date(order.createdAt).toLocaleString("th-TH")}
+                          </p>
+                        </div>
                         {getOrderStatusBadge(order.status)}
                       </div>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2">
                         {order.items.map((item: any) => (
-                          <div key={item.id} className="flex justify-between text-sm">
-                            <span>
-                              {item.quantity}x {item.menuItem.name}
-                            </span>
-                            <Badge variant="outline">{item.status}</Badge>
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline">{item.quantity}x</Badge>
+                              <span>{item.menuItem.name}</span>
+                            </div>
+                            {getItemStatusBadge(item.status)}
                           </div>
                         ))}
                       </div>

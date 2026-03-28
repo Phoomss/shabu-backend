@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useCartStore } from "@/stores/cartStore";
+import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,18 +12,18 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -33,10 +34,12 @@ import {
   Trash2,
   ShoppingCart,
   Utensils,
-  ChefHat,
   X,
+  Clock,
+  CheckCircle,
 } from "lucide-react";
-import type { MenuItem, Table, Tier } from "@/types";
+import type { MenuItem, Table, Tier, Session } from "@/types";
+import { Socket } from "socket.io-client";
 import Image from "next/image";
 
 export default function POSPage() {
@@ -45,33 +48,60 @@ export default function POSPage() {
     useCartStore();
 
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
-  const [categories, setCategories] = useState<{ id: number; name: string }[]>(
-    []
-  );
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
   const [tiers, setTiers] = useState<Tier[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedTable, setSelectedTable] = useState<string>("");
   const [selectedTier, setSelectedTier] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   useEffect(() => {
     fetchData();
+
+    // Initialize socket
+    const s = getSocket();
+    setSocket(s);
+
+    // Listen for real-time updates
+    s.on("menu:availability_changed", (data) => {
+      console.log("Menu availability changed:", data);
+      setMenuItems((prev) =>
+        prev.map((item) =>
+          item.id === data.menuItemId ? { ...item, isAvailable: data.isAvailable } : item
+        )
+      );
+      toast.info(`${data.name} ${data.isAvailable ? "พร้อมให้บริการ" : "หมดชั่วคราว"}`);
+    });
+
+    s.on("table:status_changed", (data) => {
+      console.log("Table status changed:", data);
+      fetchData();
+    });
+
+    return () => {
+      s.off("menu:availability_changed");
+      s.off("table:status_changed");
+    };
   }, []);
 
   const fetchData = async () => {
     try {
-      const [menuRes, tablesRes, tiersRes] = await Promise.all([
+      const [menuRes, tablesRes, tiersRes, sessionsRes] = await Promise.all([
         api.get("/menu-items").catch(() => ({ data: { data: [] } })),
         api.get("/tables").catch(() => ({ data: { data: [] } })),
         api.get("/tiers").catch(() => ({ data: { data: [] } })),
+        api.get("/sessions").catch(() => ({ data: { data: [] } })),
       ]);
 
       setMenuItems(menuRes.data.data || []);
       setTables(tablesRes.data.data || []);
       setTiers(tiersRes.data.data || []);
+      setSessions(sessionsRes.data.data || []);
 
       // Extract unique categories
       const uniqueCategories = Array.from(
@@ -116,13 +146,25 @@ export default function POSPage() {
     }
 
     try {
-      // Create or get session
-      const sessionRes = await api.post("/sessions", {
-        tableId: parseInt(selectedTable),
-        tierId: parseInt(selectedTier),
-      });
+      // Check if table already has active session
+      const existingSession = sessions.find(
+        (s) => s.tableId === parseInt(selectedTable) && s.status === "ACTIVE"
+      );
 
-      const sessionId = sessionRes.data.data.id;
+      let sessionId: string;
+
+      if (existingSession) {
+        sessionId = existingSession.id;
+        toast.info("ใช้เซสชันที่มีอยู่แล้ว");
+      } else {
+        // Create new session
+        const sessionRes = await api.post("/sessions", {
+          tableId: parseInt(selectedTable),
+          tierId: parseInt(selectedTier),
+        });
+        sessionId = sessionRes.data.data.id;
+        toast.success("เปิดเซสชันใหม่สำเร็จ");
+      }
 
       // Create order
       const orderItems = items.map((item) => ({
@@ -141,11 +183,21 @@ export default function POSPage() {
       setIsCheckoutOpen(false);
       setSelectedTable("");
       setSelectedTier("");
+      fetchData();
+
+      // Emit socket event for real-time update
+      socket?.emit("new-order", {
+        sessionId,
+        items: orderItems,
+      });
     } catch (error: any) {
       console.error("Checkout error:", error);
       toast.error(error.response?.data?.message || "สร้างออเดอร์ไม่สำเร็จ");
     }
   };
+
+  const availableTables = tables.filter((t) => t.status === "AVAILABLE");
+  const activeSessions = sessions.filter((s) => s.status === "ACTIVE");
 
   if (loading) {
     return (
@@ -315,16 +367,15 @@ export default function POSPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>เลือกโต๊ะ</Label>
+              <Label>เลือกโต๊ะ (ว่าง: {availableTables.length} โต๊ะ)</Label>
               <Select value={selectedTable} onValueChange={setSelectedTable}>
                 <SelectTrigger>
                   <SelectValue placeholder="เลือกโต๊ะ" />
                 </SelectTrigger>
                 <SelectContent>
-                  {tables.map((table) => (
+                  {availableTables.map((table) => (
                     <SelectItem key={table.id} value={table.id.toString()}>
-                      โต๊ะ {table.number} ({table.zone || "-"}) -{" "}
-                      {table.status === "AVAILABLE" ? "ว่าง" : "ใช้งาน"}
+                      โต๊ะ {table.number} ({table.zone || "-"})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -339,8 +390,7 @@ export default function POSPage() {
                 <SelectContent>
                   {tiers.map((tier) => (
                     <SelectItem key={tier.id} value={tier.id.toString()}>
-                      {tier.name} - {tier.priceAdult}฿ (ผู้ใหญ่) /{" "}
-                      {tier.priceChild}฿ (เด็ก)
+                      {tier.name} - {tier.priceAdult}฿ (ผู้ใหญ่) / {tier.priceChild}฿ (เด็ก)
                     </SelectItem>
                   ))}
                 </SelectContent>
