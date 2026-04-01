@@ -211,6 +211,5 @@ npm run seed
 
 ---
 
-**Last Updated:** $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-**Database:** PostgreSQL
+**Database:** PostgreSQL  
 **Prisma Version:** 7.4.2

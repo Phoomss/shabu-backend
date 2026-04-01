@@ -100,6 +100,15 @@ Shabu System is a comprehensive shabu restaurant management system built with **
 | ส่วนลดและการหักส่วนลด | Discount management |
 | สรุปยอดรายได้แบบ Real-time | Real-time revenue dashboard |
 
+### 7️⃣ ระบบตั้งค่าร้าน / Restaurant Settings
+
+| 🇹🇭 ไทย | 🇬🇧 English |
+|----------|-------------|
+| จัดการข้อมูลร้าน (ชื่อ, ที่อยู่, โลโก้) | Restaurant info management |
+| ตั้งค่าระบบทั่วไป | General system configuration |
+| ตั้งค่าเวลาเปิด-ปิด | Opening hours configuration |
+| ตั้งค่าภาษีและบริการ | Tax and service charge settings |
+
 ---
 
 ## 📂 โครงสร้างโปรเจกต์ / Project Structure
@@ -119,13 +128,15 @@ backend/
 │   ├── prisma/            # Prisma Service
 │   ├── role/              # บทบาทผู้ใช้ / User roles
 │   ├── sessions/          # รอบการนั่ง / Dining sessions
+│   ├── settings/          # ตั้งค่าร้าน / Restaurant settings
 │   ├── tables/            # โต๊ะ / Tables
 │   ├── tiers/             # ระดับราคา / Pricing tiers
 │   ├── user/              # ผู้ใช้งาน / Users
 │   ├── app.module.ts      # Module หลัก / Main module
 │   └── main.ts            # Entry point
 ├── prisma/
-│   └── schema.prisma      # Database schema
+│   ├── schema.prisma      # Database schema
+│   └── seed.ts            # Seed data script
 ├── test/                  # Tests
 └── package.json
 ```
@@ -170,7 +181,10 @@ $ cp .env..example .env
 # 3. รัน Database Migrations / Run database migrations
 $ npx prisma migrate deploy
 
-# 4. รันเซิร์ฟเวอร์ / Start server
+# 4. รัน Seed Data (Optional) / Seed database with test data
+$ npm run seed
+
+# 5. รันเซิร์ฟเวอร์ / Start server
 # Development mode
 $ npm run start:dev
 
@@ -219,6 +233,8 @@ http://localhost:3000/api-docs
 | Orders | `POST /orders` | สร้างออเดอร์ / Create order |
 | Menu Items | `GET /menu-items` | ดึงรายการเมนู / Get menu |
 | Invoices | `POST /invoices` | สร้างใบแจ้งหนี้ / Create invoice |
+| Settings | `GET /settings` | ดึงการตั้งค่าร้าน / Get restaurant settings |
+| Settings | `PATCH /settings` | อัปเดตการตั้งค่าร้าน / Update settings |
 
 ---
 
