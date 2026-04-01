@@ -111,7 +111,7 @@ export default function InvoicesPage() {
       <!DOCTYPE html>
       <html>
       <head>
-        <title>ใบเสร็จเลขที่ #${selectedInvoice.id.toString().padStart(6, "0")}</title>
+        <title>ใบเสร็จเลขที่ INV-${selectedInvoice.invoiceNumber?.toString().padStart(6, "0") ?? "N/A"}</title>
         <style>
           @media print {
             @page { margin: 20px; size: A5; }
@@ -176,7 +176,7 @@ export default function InvoicesPage() {
           <table>
             <tr>
               <td>เลขที่ใบเสร็จ:</td>
-              <td>#${selectedInvoice.id.toString().padStart(6, "0")}</td>
+              <td>INV-${selectedInvoice.invoiceNumber?.toString().padStart(6, "0") ?? "N/A"}</td>
             </tr>
             <tr>
               <td>โต๊ะ:</td>
@@ -473,7 +473,7 @@ export default function InvoicesPage() {
                   <SelectContent>
                     {activeSessions.map((session) => (
                       <SelectItem key={session.id} value={session.id}>
-                        โต๊ะ {session.table.number} - {session.tier.name} ({session.adultCount} ผู้ใหญ่, {session.childCount} เด็ก)
+                        SES-{session.sessionNumber?.toString().padStart(6, "0")} | โต๊ะ {session.table.number} - {session.tier.name} ({session.adultCount} ผู้ใหญ่, {session.childCount} เด็ก)
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -665,7 +665,7 @@ export default function InvoicesPage() {
                 filteredInvoices.map((invoice) => (
                   <TableRow key={invoice.id}>
                     <TableCell className="font-mono text-sm">
-                      #{invoice.id.toString().padStart(6, "0")}
+                      INV-{invoice.invoiceNumber?.toString().padStart(6, "0") ?? "N/A"}
                     </TableCell>
                     <TableCell className="font-medium">
                       {invoice.session?.table.number || "-"}
@@ -717,7 +717,7 @@ export default function InvoicesPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-sm text-gray-500">Invoice ID</p>
-                  <p className="font-mono">#{selectedInvoice.id.toString().padStart(6, "0")}</p>
+                  <p className="font-mono">INV-{selectedInvoice.invoiceNumber?.toString().padStart(6, "0") ?? "N/A"}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">โต๊ะ</p>

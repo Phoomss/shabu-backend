@@ -10,12 +10,14 @@ import { UpdateSessionStatusDto } from './dto/update-session-status.dto';
 import { SessionStatus, TableStatus } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { IdTransformer, IdPrefix } from 'src/common/utils/id-transformer.util';
 
 @Injectable()
 export class SessionsService {
   constructor(
     private prisma: PrismaService,
     private events: EventsGateway,
+    private idTransformer: IdTransformer,
   ) {}
 
   async findAll() {
@@ -26,16 +28,19 @@ export class SessionsService {
         _count: { select: { orders: true } },
       },
       orderBy: { startTime: 'desc' },
-    });
+    }).then(sessions => sessions.map(session => this.transformResponse(session)));
   }
 
   async findOne(id: string) {
+    // Decode the prefixed ID to raw UUID
+    const rawId = this.idTransformer.decode(id);
+    
     const session = await this.prisma.session.findUnique({
-      where: { id },
+      where: { id: rawId },
       include: { table: true, tier: true, orders: true },
     });
     if (!session) throw new NotFoundException(`Session #${id} not found`);
-    return session;
+    return this.transformResponse(session);
   }
 
   async findByQrToken(qrToken: string) {
@@ -58,7 +63,7 @@ export class SessionsService {
     if (session.status !== SessionStatus.ACTIVE) {
       throw new BadRequestException('Session is no longer active');
     }
-    return session;
+    return this.transformResponse(session);
   }
 
   async create(dto: CreateSessionDto) {
@@ -102,20 +107,23 @@ export class SessionsService {
     // [Socket] แจ้งอัปเดต table status
     this.events.emitTableStatus(dto.tableId, TableStatus.OCCUPIED);
 
-    return session;
+    return this.transformResponse(session);
   }
 
   async updateStatus(id: string, dto: UpdateSessionStatusDto) {
+    // Decode the prefixed ID to raw UUID
+    const rawId = this.idTransformer.decode(id);
+    
     const session = await this.findOne(id);
 
     const updated = await this.prisma.session.update({
-      where: { id },
+      where: { id: rawId },
       data: { status: dto.status },
       include: { table: true, tier: true },
     });
 
     // [Socket] แจ้ง session เมื่อสถานะเปลี่ยน (ปิดโต๊ะ/เรียกเช็คบิล)
-    this.events.emitSessionStatus(id, dto.status);
+    this.events.emitSessionStatus(rawId, dto.status);
 
     // ถ้าปิด session → อัปเดตโต๊ะเป็น CLEANING
     if (dto.status === SessionStatus.CLOSED || dto.status === SessionStatus.EXPIRED) {
@@ -128,7 +136,7 @@ export class SessionsService {
       this.events.emitTableStatus(session.tableId, TableStatus.CLEANING);
     }
 
-    return updated;
+    return this.transformResponse(updated);
   }
 
   // [Socket] Cron job ตรวจสอบทุก 1 นาที
@@ -155,5 +163,25 @@ export class SessionsService {
         this.events.emitSessionWarning(session.id, minutesLeft);
       }
     }
+  }
+
+  /**
+   * Transform session response to use prefixed IDs
+   */
+  private transformResponse(session: any) {
+    return {
+      ...session,
+      id: this.idTransformer.encode(session.id, IdPrefix.SESSION),
+      tableId: this.idTransformer.encodeInt(session.tableId, IdPrefix.TABLE),
+      tierId: this.idTransformer.encodeInt(session.tierId, IdPrefix.TIER),
+      table: {
+        ...session.table,
+        id: this.idTransformer.encodeInt(session.table.id, IdPrefix.TABLE),
+      },
+      tier: {
+        ...session.tier,
+        id: this.idTransformer.encodeInt(session.tier.id, IdPrefix.TIER),
+      },
+    };
   }
 }
