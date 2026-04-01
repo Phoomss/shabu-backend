@@ -50,6 +50,7 @@ model Role {
 
 model User {
   id           String    @id @default(uuid())
+  userNumber   Int       @unique @default(autoincrement()) // User ID สำหรับแสดง (เช่น USR-000001)
   roleId       Int
   role         Role      @relation(fields: [roleId], references: [id])
   username     String    @unique
@@ -128,11 +129,14 @@ model Table {
 /// รอบการนั่งทานของลูกค้า เชื่อมโยงกับโต๊ะและ QR Token สำหรับสั่งอาหาร
 model Session {
   id        String        @id @default(uuid())
+  sessionNumber Int       @unique @default(autoincrement()) // Session ID สำหรับแสดง (เช่น SES-000001)
   tableId   Int
   table     Table         @relation(fields: [tableId], references: [id])
   tierId    Int
   tier      Tier          @relation(fields: [tierId], references: [id])
   qrToken   String        @unique
+  adultCount Int          @default(1) // จำนวนผู้ใหญ่
+  childCount Int          @default(0) // จำนวนเด็ก
   startTime DateTime      @default(now())
   endTime   DateTime // [Socket] ส่ง event แจ้งเตือนลูกค้า/พนักงาน เมื่อเหลือ 15 นาที หรือหมดเวลา
   status    SessionStatus @default(ACTIVE) // [Socket] แจ้งเตือนเมื่อมีการปิดโต๊ะหรือเรียกเช็คบิล
@@ -144,6 +148,7 @@ model Session {
 /// หัวข้อออเดอร์ในแต่ละครั้งที่ลูกค้ากด "ยืนยันการสั่ง"
 model Order {
   id        String      @id @default(uuid())
+  orderNumber Int       @unique @default(autoincrement()) // Order ID สำหรับแสดง (เช่น ORD-000001)
   sessionId String
   session   Session     @relation(fields: [sessionId], references: [id])
   status    OrderStatus @default(PENDING) // [Socket] แจ้งเตือนออเดอร์ใหม่เข้าครัว (New Order Alert)
@@ -190,16 +195,18 @@ model Recipe {
 
 /// ข้อมูลใบชำระเงินและสรุปยอดหลังจากลูกค้าทานเสร็จ
 model Invoice {
-  id            String   @id @default(uuid())
-  sessionId     String
-  session       Session  @relation(fields: [sessionId], references: [id])
-  totalAmount   Decimal
-  discount      Decimal  @default(0)
-  netAmount     Decimal // [Socket] แจ้งยอดเงินเข้าที่หน้า Dashboard ของ Owner ทันที
-  paymentMethod String
-  createdBy     String
-  user          User     @relation(fields: [createdBy], references: [id])
-  createdAt     DateTime @default(now())
+  id              String   @id @default(uuid())
+  invoiceNumber   Int      @unique @default(autoincrement()) // Invoice ID สำหรับแสดง (เช่น INV-000001)
+  sessionId       String
+  session         Session  @relation(fields: [sessionId], references: [id])
+  totalAmount     Decimal
+  discount        Decimal  @default(0)
+  netAmount       Decimal // [Socket] แจ้งยอดเงินเข้าที่หน้า Dashboard ของ Owner ทันที
+  paymentMethod   String
+  promptPayNumber String?  // เบอร์โทรศัพท์ PromptPay (สำหรับ QR_CODE)
+  createdBy       String
+  user            User     @relation(fields: [createdBy], references: [id])
+  createdAt       DateTime @default(now())
 }
 
 /// บันทึกเหตุผลการยกเลิกอาหาร เพื่อใช้ตรวจสอบย้อนหลังป้องกันการทุจริต

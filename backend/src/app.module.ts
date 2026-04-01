@@ -15,6 +15,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { OrdersModule } from './orders/orders.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { InvoicesModule } from './invoices/invoices.module';
+import { SettingsModule } from './settings/settings.module';
+import { IdTransformerModule } from './common/id-transformer.module';
 
 
 @Module({
@@ -23,6 +25,7 @@ import { InvoicesModule } from './invoices/invoices.module';
     ScheduleModule.forRoot(),
     PrismaModule,
     EventsModule,
+    IdTransformerModule,
     RoleModule,
     UsersModule,
     AuthModule,
@@ -34,7 +37,8 @@ import { InvoicesModule } from './invoices/invoices.module';
     SessionsModule,
     OrdersModule,
     IngredientsModule,
-    InvoicesModule
+    InvoicesModule,
+    SettingsModule
   ],
 })
 export class AppModule { }

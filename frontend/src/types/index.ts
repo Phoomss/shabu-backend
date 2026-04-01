@@ -26,11 +26,14 @@ export type TableStatus = 'AVAILABLE' | 'OCCUPIED' | 'RESERVED' | 'CLEANING';
 
 export interface Session {
   id: string;
+  sessionNumber: number;
   tableId: number;
   table: Table;
   tierId: number;
   tier: Tier;
   qrToken: string;
+  adultCount: number;
+  childCount: number;
   startTime: string;
   endTime: string;
   status: SessionStatus;
@@ -123,12 +126,14 @@ export interface Recipe {
 
 export interface Invoice {
   id: number;
+  invoiceNumber: number;
   sessionId: string;
   session?: Session;
   totalAmount: number;
   discount: number;
   netAmount: number;
   paymentMethod: PaymentMethod;
+  promptPayNumber?: string | null;
   createdBy: string;
   createdAt: string;
 }
