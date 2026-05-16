@@ -35,6 +35,18 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: false
+          tags: shabu-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       # 🔥 ถ้า test ผ่าน → ค่อย merge
       - name: Merge to develop
         run: |

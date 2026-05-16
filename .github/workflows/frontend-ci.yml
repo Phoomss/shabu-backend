@@ -35,6 +35,18 @@ jobs:
       - name: Build Next.js
         run: npm run build
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          push: false
+          tags: shabu-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       #  แจ้งเตือนเมื่อสำเร็จ
       - name: Notify Discord (Success)
         if: success()
